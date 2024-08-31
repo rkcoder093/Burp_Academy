@@ -583,16 +583,213 @@ Occure:
 ![Methodology](race-conditions-methodology.png)
 
 ## Multi-endpoint race conditions
+![image](race-conditions-basket-adjustment-race.png)
 ## Single-endpoint race conditions
+![Single](race-conditions-password-reset-collision.png)
 ## Session-based locking mechanisms
+
+- Some frameworks attempt to prevent accidental data corruption by using some form of request locking. For example, PHP's native session handler module only processes one request per session at a time. 
+
 ## Partial construction race conditions
 ## Time-sensitive attacks
 ## Preventing race condition vulnerabilities
+- Avoid mixing data from different storage places.
+- Ensure sensitive endpoints make state changes atomic by using the datastore's concurrency features. For example, use a single database transaction to check the payment matches the cart value and confirm the order.
+- As a defense-in-depth measure, take advantage of datastore integrity and consistency features like column uniqueness constraints.
+- Don't attempt to use one data storage layer to secure another. For example, sessions aren't suitable for preventing limit overrun attacks on databases.
+- Ensure your session handling framework keeps sessions internally consistent. Updating session variables individually instead of in a batch might be a tempting optimization, but it's extremely dangerous. This goes for ORMs too; by hiding away concepts like transactions, they're taking on full responsibility for them.
+- In some architectures, it may be appropriate to avoid server-side state entirely. Instead, you could use encryption to push the state client-side, for example, using JWTs. Note that this has its own risks, as we've covered extensively in our topic on JWT attacks.
+
+
+
+
+
+
+
+
+# GraphQL 
+## Finding GraphQL endpoints
+
+- Before you can test a GraphQL API, you first need to find its endpoint. As GraphQL APIs use the same endpoint for all requests, this is a valuable piece of information.  
+- If you send query{__typename} to any GraphQL endpoint, it will include the string `{"data": {"__typename": "query"}}` somewhere in its response. This is known as a universal query
+
+- Common Endpoints
+    - /graphql
+    - /api
+    - /api/graphql
+    - /graphql/api
+    - /graphql/graphql
+
+- If these common endpoints don't return a GraphQL response, you could also try appending /v1 to the path. 
+- GraphQL endpoints to only accept POST requests with content-type of application/json but some accept GET requests or POST requests that use a content-type of x-www-form-urlencoded
+
+## Exploiting unsanitized arguments
+- If the API uses arguments to access objects directly, it may be vulnerable to access control vulnerabilities(IDOR)
+## Discovering schema information
+- The next step in testing the API is to piece together information about the underlying schema. 
+- Introspection is a built-in GraphQL function that enables you to query a server for information about the schema. 
+- Introspection helps you to understand how you can interact with a GraphQL API.  `__schema`
+
+**Probing for introspection**
+`{`
+    `"query": "{__schema{queryType{name}}}"`
+`}`
+
+**Running a full introspection query**
+    query IntrospectionQuery {
+        __schema {
+            queryType {
+                name
+            }
+            mutationType {
+                name
+            }
+            subscriptionType {
+                name
+            }
+            types {
+             ...FullType
+            }
+            directives {
+                name
+                description
+                args {
+                    ...InputValue
+            }
+            onOperation  #Often needs to be deleted to run query
+            onFragment   #Often needs to be deleted to run query
+            onField      #Often needs to be deleted to run query
+            }
+        }
+    }
+
+    fragment FullType on __Type {
+        kind
+        name
+        description
+        fields(includeDeprecated: true) {
+            name
+            description
+            args {
+                ...InputValue
+            }
+            type {
+                ...TypeRef
+            }
+            isDeprecated
+            deprecationReason
+        }
+        inputFields {
+            ...InputValue
+        }
+        interfaces {
+            ...TypeRef
+        }
+        enumValues(includeDeprecated: true) {
+            name
+            description
+            isDeprecated
+            deprecationReason
+        }
+        possibleTypes {
+            ...TypeRef
+        }
+    }
+
+    fragment InputValue on __InputValue {
+        name
+        description
+        type {
+            ...TypeRef
+        }
+        defaultValue
+    }
+
+    fragment TypeRef on __Type {
+        kind
+        name
+        ofType {
+            kind
+            name
+            ofType {
+                kind
+                name
+                ofType {
+                    kind
+                    name
+                }
+            }
+        }
+    }
+**Note: query doesn't run, try removing the onOperation, onFragment, and onField directives from the query structure.**
+
+
+## Bypassing GraphQL introspection defenses
+if the developer has only excluded `__schema{`, then the below introspection query would not be excluded.
+
+    #Introspection query with newline
+    {
+        "query": "query{__schema
+        {queryType{name}}}"
+    }
+
+- Try a GET request, or a POST request with a content-type of `x-www-form-urlencoded`.
+URL encoded paraeter
+     
+    GET /graphql?query=query%7B__schema%0A%7BqueryType%7Bname%7D%7D%7D
+## Bypassing rate limiting using aliases
+Ordinarily, GraphQL objects can't contain multiple properties with the same name. Aliases enable you to bypass this restriction by explicitly naming the properties you want the API to return. You can use aliases to return multiple instances of the same type of object in one request
+
+    example alies
+
+    mutaion {bruteforce0:login(input:{password: "123456", username: "carlos"}) {
+            token
+            success
+    }}
+## GraphQL CSRF
+- Cross-site request forgery (CSRF) vulnerabilities enable an attacker to induce users to perform actions that they do not intend to perform. 
+## Preventing GraphQL attacks
+- disable introspection on it. 
+- you should review the API's schema to make sure that it does not expose unintended fields to the public
+- Make sure that your API's schema does not expose any private user fields
+## Preventing GraphQL brute-force attacks
+- Limit the query depth of your API's queries.
+- Configure operation limits. Operation limits enable you to configure the maximum number of unique fields, aliases, and root fields that your API can accept.
+- Configure the maximum amount of bytes a query can contain.
+- Consider implementing cost analysis on your API.
+## Preventing CSRF over GraphQL
+- Your API only accepts queries over JSON-encoded POST.
+- The API validates that content provided matches the supplied content type.
+- The API has a secure CSRF token mechanism.
+
+
+
+# Server side request forgery AKA (SSRF)
+
+## What is SSRF?
+- Server-side request forgery is a web security vulnerability that allows an attacker to cause the server-side application to make requests to an unintended location.
+
+
+
+## What is the impact of SSRF attacks?
+- often result in unauthorized actions or access to data within the organization.
+- This can be in the vulnerable application, or on other back-end systems that the application can communicate with.
+- the SSRF vulnerability might allow an attacker to perform arbitrary command execution
+
+## Common SSRF attacks
+- exploit trust relationships to escalate an attack from the vulnerable application and perform unauthorized actions.
+
+## Circumventing common SSRF defenses
+## Blind SSRF vulnerabilities
+## Finding hidden attack surface for SSRF vulnerabilities
+
 
 
 
 
 # CLIENT SIDE
+
+
 
 # Cross-site scripting
 
@@ -663,3 +860,13 @@ jQuery.parseHTML()
 
 
 
+
+
+
+1. search for all the domain
+2. serch for all the technologies running from the website (censys) 
+    - subdomainfinder
+    - assetfinder
+3. combine the list of subdomains from the diffrent tools, and chck it is alive or not with (httpx)
+4. check to domain takeover  from subzy
+5. check all the alive url with 200, 301, 302 with katana
